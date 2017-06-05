@@ -58,7 +58,17 @@ public class ZkRegistry implements Registry
         
         if (zk != null)
         {
-            return getServiceAddressOnServiceNode(serviceClassName);
+            try
+            {
+                String servicePath = ROOT_NODE_PATH + "/" + serviceClassName;
+                List<String> addrList = zk.getChildren(servicePath, false);
+                return addrList;
+            }
+            catch (KeeperException | InterruptedException e)
+            {
+                logger.error(e.getMessage());
+                return new ArrayList<String>();
+            }
         }
         
         return new ArrayList<String>();
@@ -76,52 +86,52 @@ public class ZkRegistry implements Registry
             throw new CrossException("'zk.address' is not configured in 'application.properties'!");
         }
         
-        try
+        synchronized (ROOT_NODE_PATH)
         {
-            logger.error("connecting to zk server " + zkAddress);
-            System.out.println("connecting to zk server " + zkAddress);
-            
-            zk = new ZooKeeper(zkAddress, 5000, new Watcher()
+            if (zk != null)
             {
-                @Override
-                public void process(WatchedEvent event)
+                try
                 {
-                    if (event.getState() == Event.KeeperState.SyncConnected)
+                    logger.error("connecting to zk server " + zkAddress);
+                    System.out.println("connecting to zk server " + zkAddress);
+                    
+                    zk = new ZooKeeper(zkAddress, 5000, new Watcher()
                     {
-                        logger.info("connected to zk server " + zkAddress);
-                        latch.countDown();
-                    }
+                        @Override
+                        public void process(WatchedEvent event)
+                        {
+                            if (event.getState() == Event.KeeperState.SyncConnected)
+                            {
+                                logger.info("connected to zk server " + zkAddress);
+                                latch.countDown();
+                            }
+                        }
+                    });
+                    
+                    latch.await();
                 }
-            });
-            
-            latch.await();
-        }
-        catch (IOException | InterruptedException e)
-        {
-            logger.error(e.getMessage(), e);
-            throw new CrossException(e);
-        }
-    }
-    
-    private List<String> getServiceAddressOnServiceNode(String serviceClassName)
-    {
-        try
-        {
-            String servicePath = ROOT_NODE_PATH + "/" + serviceClassName;
-            List<String> addrList = zk.getChildren(servicePath, false);
-            return addrList;
-        }
-        catch (KeeperException | InterruptedException e)
-        {
-            logger.error(e.getMessage());
-            return new ArrayList<String>();
-        }
-        
+                catch (IOException | InterruptedException e)
+                {
+                    logger.error(e.getMessage(), e);
+                    throw new CrossException(e);
+                }
+            }
+        }  
     }
     
     @Override
     public void watchService(String serviceClassName)
     {
+        if (zk == null)
+        {
+            connectZk();
+        }
+        
+        if(zk == null)
+        {
+            return;
+        }
+        
         try
         {
             String servicePath = ROOT_NODE_PATH + "/" + serviceClassName;
@@ -169,6 +179,16 @@ public class ZkRegistry implements Registry
     @Override
     public void watchRoot()
     {
+        if (zk == null)
+        {
+            connectZk();
+        }
+        
+        if(zk == null)
+        {
+            return;
+        }
+        
         try
         {
             List<String> serviceClassNameList = zk.getChildren(ROOT_NODE_PATH, new Watcher()
