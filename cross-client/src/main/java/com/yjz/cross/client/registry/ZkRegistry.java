@@ -2,9 +2,11 @@ package com.yjz.cross.client.registry;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 
 import org.apache.zookeeper.KeeperException;
@@ -136,7 +138,7 @@ public class ZkRegistry implements Registry
             });
             
             serverAddrList = (serverAddrList == null) ? new ArrayList<String>(0) : serverAddrList;
-
+            
             logger.debug("service adrresses: {}", serverAddrList);
             logger.info("Service discovery triggered updating connected server node.");
             updateClientHanderManager(serviceClassName, serverAddrList);
@@ -149,6 +151,7 @@ public class ZkRegistry implements Registry
     
     /**
      * 更新服务对应的ClientHandlers
+     * 
      * @Description (TODO这里用一句话描述这个方法的作用)
      * @author biw
      * @param serviceClassName
@@ -157,7 +160,7 @@ public class ZkRegistry implements Registry
     private void updateClientHanderManager(String serviceClassName, List<String> serverAddrList)
     {
         ClientHandlerManager handlerManager = ConnectionManager.instance().getHandlerManager(serviceClassName);
-        if(handlerManager != null)
+        if (handlerManager != null)
         {
             handlerManager.updateClientHandler(serverAddrList);
         }
@@ -194,44 +197,40 @@ public class ZkRegistry implements Registry
     
     /**
      * 更新所有新增或者删除Service的ClientHandler
-     * @Description 
+     * 
+     * @Description
      * @author biw
      * @param serviceList
      */
     private void updateService(List<String> serviceClassNameList)
-    {      
+    {
         Map<String, ClientHandlerManager> handlerManagers = ConnectionManager.instance().getHandlerManagers();
         
         // 处理新增的service
-        for(String serviceClassName : serviceClassNameList)
+        Set<String> serviceClassNameSet = new HashSet<>();
+        for (String serviceClassName : serviceClassNameList)
         {
-            if(!handlerManagers.containsKey(serviceClassName))
+            if (!handlerManagers.containsKey(serviceClassName))
             {
-                try
-                {
-                    CrossClientInitializer.connectServcie(serviceClassName);
-                }
-                catch (ClassNotFoundException e)
-                {
-                    logger.error(e.getMessage());
-                }
+                serviceClassNameSet.add(serviceClassName);
             }
         }
+        ConnectionManager.instance().concurrentConnectServerByClassName(serviceClassNameSet);
         
         // 处理删除的service
-        for(Entry<String, ClientHandlerManager> entry : handlerManagers.entrySet())
+        for (Entry<String, ClientHandlerManager> entry : handlerManagers.entrySet())
         {
             boolean matchFlag = false;
-            for(String serviceClassName : serviceClassNameList)
+            for (String serviceClassName : serviceClassNameList)
             {
-                if(entry.getKey().equals(serviceClassName))
+                if (entry.getKey().equals(serviceClassName))
                 {
                     matchFlag = true;
                     break;
                 }
             }
             
-            if(!matchFlag)
+            if (!matchFlag)
             {
                 ClientHandlerManager handlerManager = ConnectionManager.instance().getHandlerManager(entry.getKey());
                 handlerManager.clearClientHandlers();

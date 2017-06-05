@@ -1,8 +1,10 @@
 package com.yjz.cross.client.transport;
 
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.SynchronousQueue;
@@ -56,7 +58,7 @@ public class ConnectionManager
         return connManager;
     }
     
-    public Map<String, ClientHandlerManager>getHandlerManagers()
+    public Map<String, ClientHandlerManager> getHandlerManagers()
     {
         return this.clientHandlerManagerMap;
     }
@@ -85,42 +87,105 @@ public class ConnectionManager
     }
     
     /**
-     * 针对每一个服务，与已经注册该服务的服务端的建立连接
+     * 针对每一个服务代理类，并发的与已经注册的服务端建立连接
      * 
-     * @Description
+     * @Description 监控根节点发生变更时触发
      * @author biw
      * @param serviceClassName
      * @param serviceAddresses
+     * @param latch 控制每个连接建立完毕才进行下一步处理
      */
-    public void connectServer(String serviceClassName, List<String> serviceAddresses)
+    public void concurrentConnectServerByClassName(Set<String> serviceClassNameList)
     {
-        try
+        Registry registry = RegistryFactory.instance().getRegistry();
+        for (String serviceClassName : serviceClassNameList)
         {
-            connectServerLock.lock();
+            List<String> serviceAddresses = registry.getServiceAddresses(serviceClassName);
             
-            ClientHandlerManager clienHandlerManager = getHandlerManager(serviceClassName);
-            if (clienHandlerManager.hasClientHandler())
+            if (!serviceAddresses.isEmpty())
             {
-                return;
+                threadPoolExecutor.execute(new Runnable()
+                {
+                    @Override
+                    public void run()
+                    {
+                        syncConnectServer(serviceClassName, serviceAddresses);
+                    }
+                });
             }
-            
-            for (String serviceAddress : serviceAddresses)
-            {
-                connectServer(serviceClassName, serviceAddress, null);
-            }
-            
-            Registry registry = RegistryFactory.instance().getRegistry();
-            registry.watchService(serviceClassName);
-        }
-        finally
-        {
-            connectServerLock.unlock();
         }
         
     }
     
     /**
      * 针对每一个服务，与已经注册该服务的服务端的建立连接
+     * 
+     * @Description 监控单个服务下新增的结点
+     * @author biw
+     * @param serviceClassName
+     * @param serviceAddresses
+     */
+    public void connectServer(String serviceClassName, List<InetSocketAddress> socketAddresses)
+    {
+        List<String> serviceAdressList = new ArrayList<>();
+        for (InetSocketAddress socketAddr : socketAddresses)
+        {
+            serviceAdressList.add(socketAddr.getHostName() + ":" + socketAddr.getPort());
+        }
+        
+        syncConnectServer(serviceClassName, serviceAdressList);
+        
+    }
+    
+    /**
+     * 针对每一个服务代理类，并发的与已经注册的服务端建立连接
+     * 
+     * @Description 启动时调用
+     * @author biw
+     * @param serviceClassName
+     * @param serviceAddresses
+     * @param latch 控制每个连接建立完毕才进行下一步处理
+     */
+    public void concurrentConnectServerByClass(Set<Class<?>> proxyClassList)
+    {
+        Registry registry = RegistryFactory.instance().getRegistry();
+        for (Class<?> proxyClass : proxyClassList)
+        {
+            List<String> serviceAddresses = registry.getServiceAddresses(proxyClass.getName());
+            
+            if (!serviceAddresses.isEmpty())
+            {
+                threadPoolExecutor.execute(new Runnable()
+                {
+                    @Override
+                    public void run()
+                    {
+                        syncConnectServer(proxyClass.getName(), serviceAddresses);
+                    }
+                });
+            }
+        }
+        
+    }
+    
+    /**
+     * 服务方法调用时，若无该服务的链接，则调用建立连接
+     * 
+     * @param serviceClassName
+     */
+    public void syncConnectServer(String serviceClassName)
+    {
+        Registry registry = RegistryFactory.instance().getRegistry();
+        List<String> serviceAddresses = registry.getServiceAddresses(serviceClassName);
+        if (!serviceAddresses.isEmpty())
+        {
+            syncConnectServer(serviceClassName, serviceAddresses);
+        }
+        
+    }
+    
+    /**
+     * 加锁、加栅栏，针对一个服务，与已经注册该服务的服务端的建立连接
      * 
      * @Description
      * @author biw
@@ -134,21 +199,14 @@ public class ConnectionManager
         {
             connectServerLock.lock();
             
-            ClientHandlerManager clienHandlerManager = getHandlerManager(serviceClassName);
-            if (clienHandlerManager.hasClientHandler())
+            List<String> noExistsServiceAddrList = getNoExistServiceAddr(serviceClassName, serviceAddresses);
+            CountDownLatch latch = new CountDownLatch(noExistsServiceAddrList.size());
+            for (String noExistServiceAddr : noExistsServiceAddrList)
             {
-                return;
+                doConnectServer(serviceClassName, noExistServiceAddr, latch);
             }
             
-            CountDownLatch latch = new CountDownLatch(serviceAddresses.size());
-            for (String serviceAddress : serviceAddresses)
-            {
-                connectServer(serviceClassName, serviceAddress, latch);
-            }
             latch.await();
-            
-            Registry registry = RegistryFactory.instance().getRegistry();
-            registry.watchService(serviceClassName);
         }
         catch (InterruptedException e)
         {
@@ -161,28 +219,30 @@ public class ConnectionManager
         }
     }
     
-    public void connectServer(String serviceClassName, InetSocketAddress socketAddress)
+    /**
+     * 筛选出未建立过连接的服务连接地址（不考虑当前恰巧被删除的服务连接地址）
+     * 
+     * @param serviceClassName
+     * @param serviceAddresses
+     * @return
+     */
+    private List<String> getNoExistServiceAddr(String serviceClassName, List<String> serviceAddresses)
     {
-        String serviceAddress = socketAddress.getHostName() + ":" + socketAddress.getPort();
-        try
+        ClientHandlerManager clienHandlerManager = getHandlerManager(serviceClassName);
+        
+        List<String> noExists = new ArrayList<>();
+        for (String serviceAddr : serviceAddresses)
         {
-            connectServerLock.lock();
-            
-            ClientHandlerManager clienHandlerManager = getHandlerManager(serviceClassName);
-            if(clienHandlerManager.hasClientHandler())
+            if (!clienHandlerManager.hasClientHandler(serviceAddr))
             {
-                return;
+                noExists.add(serviceAddr);
             }
-            
-            connectServer(serviceClassName, serviceAddress, null);
         }
-        finally
-        {
-            connectServerLock.unlock();
-        }
+        
+        return noExists;
     }
     
-    public void connectServer(String serviceClassName, String serviceAddress, CountDownLatch latch)
+    public void doConnectServer(String serviceClassName, String serviceAddress, CountDownLatch latch)
     {
         threadPoolExecutor.submit(new Runnable()
         {

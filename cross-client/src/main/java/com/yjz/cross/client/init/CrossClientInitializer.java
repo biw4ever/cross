@@ -33,7 +33,7 @@ import com.yjz.cross.config.Configuration;
  * @version 1.0.0
  */
 @Component
-public class CrossClientInitializer  implements ApplicationContextAware
+public class CrossClientInitializer implements ApplicationContextAware
 {
     private static final Logger logger = LoggerFactory.getLogger(CrossClientInitializer.class);
     
@@ -58,24 +58,28 @@ public class CrossClientInitializer  implements ApplicationContextAware
                 if (annotation != null)
                 {
                     Class<?> proxyClass = field.getType();
-//                    String registryName = annotation.registryName();
+                    // String registryName = annotation.registryName();
                     
                     // 生成Field的代理对象
                     proxyReferences(obj, field, proxyClass);
                     
-                    //收集代理类，去重后建立每个代理类与Service服务端之间的连接
+                    // 收集代理类，去重后建立每个代理类与Service服务端之间的连接
                     proxyClassList.add(proxyClass);
                 }
             }
         }
         
         // 建立每个代理类与Service的服务端的连接
-        for(Class<?> proxyClass : proxyClassList)
-        { 
-            connectServer(proxyClass);
+        connectServer(proxyClassList);
+        
+        // Watch service updates
+        for (Class<?> proxyClass : proxyClassList)
+        {
+            Registry registry = RegistryFactory.instance().getRegistry();
+            registry.watchService(proxyClass.getName());
         }
         
-      //Watch Root Node for service updates
+        // Watch Root Node for service updates
         Registry registry = RegistryFactory.instance().getRegistry();
         registry.watchRoot();
     }
@@ -102,34 +106,11 @@ public class CrossClientInitializer  implements ApplicationContextAware
         return crossClient.create(clazz);
     }
     
-    public static void connectServcie(String proxyClassName) throws ClassNotFoundException
+    public static void connectServer(Set<Class<?>> proxyClassList)
     {
-        Class proxyClass = Class.forName(proxyClassName);
-        connectServer(proxyClass);
+        ConnectionManager.instance().concurrentConnectServerByClass(proxyClassList);
     }
     
-    public static void connectServer(Class<?> proxyClass)
-    {
-        Registry registry = RegistryFactory.instance().getRegistry();
-        List<String> serviceAddresses = registry.getServiceAddresses(proxyClass.getName());
-        
-        if (!serviceAddresses.isEmpty())
-        {
-            ConnectionManager.instance().connectServer(proxyClass.getName(), serviceAddresses);    
-        }     
-    }
-    
-    public static void syncConnectServer(Class<?> proxyClass) 
-    {
-        Registry registry = RegistryFactory.instance().getRegistry();
-        List<String> serviceAddresses = registry.getServiceAddresses(proxyClass.getName());
-        
-        if (!serviceAddresses.isEmpty())
-        {
-            ConnectionManager.instance().syncConnectServer(proxyClass.getName(), serviceAddresses);    
-        }
-    }
-
     @Override
     public void setApplicationContext(ApplicationContext applicationContext)
         throws BeansException
@@ -148,8 +129,8 @@ public class CrossClientInitializer  implements ApplicationContextAware
         
         CrossClientInitializer.bootStrap(beanObjectList, conf);
         
-        logger.info("cross client is booted"); 
+        logger.info("cross client is booted");
         
     }
-  
+    
 }

@@ -51,6 +51,13 @@ public class ClientHandlerManager
         return socketAddressSet.contains(socketAddress);
     }
     
+    public boolean hasClientHandler(String serviceAddress)
+    {
+        String[] parts = serviceAddress.split(":");
+        InetSocketAddress socketAddr = new InetSocketAddress(parts[0], Integer.parseInt(parts[1]));
+        return socketAddressSet.contains(socketAddr);
+    }
+    
     public void addClientHander(ClientHandler clientHander)
     {
         clientHandlerList.add(clientHander);
@@ -61,12 +68,18 @@ public class ClientHandlerManager
     {
         clientHandlerList.remove(clientHander);
         socketAddressSet.remove((InetSocketAddress)clientHander.getRemotePeer());
+        clientHander.close();
     }
     
     public void clearClientHandlers()
     {
         clientHandlerList.clear();
-        socketAddressSet.clear();      
+        socketAddressSet.clear();
+        
+        for (ClientHandler clientHander : clientHandlerList)
+        {
+            clientHander.close();
+        }
     }
     
     public RPCFuture sendRequest(RpcRequest request)
@@ -96,15 +109,7 @@ public class ClientHandlerManager
                 + ", perhaps there is not available service on the registry! Now try to find servcies and connect to them.";
             logger.debug(message);
             
-            try
-            {
-                CrossClientInitializer.syncConnectServer(Class.forName(serviceClassName));
-            }
-            catch (Exception e)
-            {
-                logger.error(e.getMessage(), e);
-                throw new CrossException("failed to find service and send request.");
-            }
+            ConnectionManager.instance().syncConnectServer(serviceClassName);
         }
     }
     
@@ -145,16 +150,22 @@ public class ClientHandlerManager
         return socketAddrList;
     }
     
+    /**
+     * 从服务下所有结点中查找未连接的进行连接
+     * 
+     * @param socketAddrList
+     */
     private void addNewClientHandlers(List<InetSocketAddress> socketAddrList)
     {
-        for (InetSocketAddress newSocketAddr : socketAddrList)
+        List<InetSocketAddress> newSocketAddrList = new ArrayList<>();
+        for (InetSocketAddress socketAddr : socketAddrList)
         {
-            if (!socketAddressSet.contains(newSocketAddr))
+            if (!socketAddressSet.contains(socketAddr))
             {
-                ConnectionManager.instance().connectServer(serviceClassName, newSocketAddr);
+                newSocketAddrList.add(socketAddr);
             }
         }
-        
+        ConnectionManager.instance().connectServer(serviceClassName, newSocketAddrList);
     }
     
     private void rmNonExsitedClientHandlers(List<InetSocketAddress> socketAddrList)
