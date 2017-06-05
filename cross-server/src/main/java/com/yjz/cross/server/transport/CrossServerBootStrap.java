@@ -67,7 +67,7 @@ public class CrossServerBootStrap
             int port = Integer.parseInt(array[1]);
 
             ChannelFuture future = b.bind(host, port).sync();
-            logger.info("Server started on port "+ port);
+            logger.info("Cross Server started on port "+ port);
 
             future.channel().closeFuture().sync();
         } finally {
