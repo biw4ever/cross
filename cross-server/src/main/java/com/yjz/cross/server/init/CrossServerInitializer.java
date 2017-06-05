@@ -102,6 +102,7 @@ public class CrossServerInitializer implements ApplicationContextAware
         try
         {
             // 获取标注了CrossService的所有SpringBean对象
+            logger.info("Start loading Cross Services.");
             Map<String, Object> crossServiceMap = applicationContext.getBeansWithAnnotation(CrossService.class);
             Object[] objects = crossServiceMap.values().toArray();
             
@@ -110,6 +111,7 @@ public class CrossServerInitializer implements ApplicationContextAware
             conf.setServerAddress(serverAddress.trim());
             
             CrossServerInitializer.bootStrap(objects, conf);
+            logger.info("Fininshed loading Cross Services.");
         }
         catch (Exception e)
         {

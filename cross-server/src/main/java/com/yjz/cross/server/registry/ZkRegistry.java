@@ -101,6 +101,8 @@ public class ZkRegistry implements Registry
         
         try
         {
+            logger.info("Cross server connected to zkServer " + zkAddress);
+            
             zk = new ZooKeeper(zkAddress, 8000, new Watcher()
             {
                 
@@ -109,7 +111,7 @@ public class ZkRegistry implements Registry
                 {
                     if (event.getState() == Event.KeeperState.SyncConnected)
                     {
-                        System.out.println("connected to zkServer " + zkAddress);
+                        logger.info("Cross server connected to zkServer " + zkAddress);
                         latch.countDown();
                     }
                 }
