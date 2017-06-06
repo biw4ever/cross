@@ -115,6 +115,14 @@ public class ClientHandlerManager
     
     private ClientHandler chooseClientHandler()
     {
+        if(clientHandlerList.isEmpty())
+        {
+            String message = "there is still no client handler for " + serviceClassName
+                + "! ";
+            logger.debug(message);
+            throw new CrossException(message);
+        }
+        
         int size = clientHandlerList.size();
         int index = roundRobin.getAndIncrement() % size;
         if (roundRobin.intValue() >= size)
