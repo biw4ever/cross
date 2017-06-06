@@ -101,7 +101,7 @@ public class ZkRegistry implements Registry
         
         try
         {
-            logger.info("Cross server connected to zkServer " + zkAddress);
+            logger.info("Cross server connecting to zkServer " + zkAddress);
             
             zk = new ZooKeeper(zkAddress, 8000, new Watcher()
             {
