@@ -88,7 +88,7 @@ public class ZkRegistry implements Registry
         
         synchronized (ROOT_NODE_PATH)
         {
-            if (zk != null)
+            if (zk == null)
             {
                 try
                 {
