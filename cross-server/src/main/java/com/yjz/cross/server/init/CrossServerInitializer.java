@@ -46,6 +46,8 @@ public class CrossServerInitializer implements ApplicationContextAware
     private static final Map<String, Object> handlerMap = new HashMap<String, Object>();
     
     private static final Map<String, ThreadPoolExecutor> threadPoolExecutorMap = new HashMap<String, ThreadPoolExecutor>();
+    
+    public static ApplicationContext APPLICATIONCONTEXT;
 
     public static void bootStrap(Object[] objs, Configuration conf) 
     {
@@ -101,6 +103,8 @@ public class CrossServerInitializer implements ApplicationContextAware
     {
         try
         {
+            APPLICATIONCONTEXT = applicationContext;
+            
             // 获取标注了CrossService的所有SpringBean对象
             logger.info("Start loading Cross Services.");
             Map<String, Object> crossServiceMap = applicationContext.getBeansWithAnnotation(CrossService.class);
