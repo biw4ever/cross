@@ -94,6 +94,17 @@ public class ServerHandler extends SimpleChannelInboundHandler<RpcRequest> {
         FastClass serviceFastClass = FastClass.create(serviceClass);
         FastMethod serviceFastMethod = serviceFastClass.getMethod(methodName, parameterTypes);
         return serviceFastMethod.invoke(serviceBean, parameters);
+//        Map<String, ?> map  = CrossServerInitializer.APPLICATIONCONTEXT.getBeansOfType(Class.forName(className));
+//        if(!map.isEmpty())
+//        {
+//            Object beanObj = map.values().iterator().next();
+//            Method method = serviceClass.getMethod(methodName, parameterTypes);
+//            method.setAccessible(true);
+//            return method.invoke(beanObj, parameters);
+//        }
+//        
+//        LOGGER.error("there is no bean corresponding to " + className);
+//        return null;
     }
 
     @Override

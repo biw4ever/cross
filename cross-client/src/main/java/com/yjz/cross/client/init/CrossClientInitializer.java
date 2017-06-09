@@ -126,29 +126,23 @@ public class CrossClientInitializer implements ApplicationContextAware
     public void setApplicationContext(ApplicationContext applicationContext)
         throws BeansException
     {
-        // 遍历容器中所有Bean，获取其中标注了CrossReference的字段，将其替换成代理对象，此代理对象的方法调用将通过Rpc的方式调用服务端来实现
-        logger.info("Start loading Cross references");
-        List<Object> beanObjectList = new ArrayList<>();
-        
-        Map<String, Object> map = applicationContext.getBeansWithAnnotation(Service.class);
-        for (Object obj : map.values())
-        {
-            beanObjectList.add(obj);
-        }
-        
-        map = applicationContext.getBeansWithAnnotation(Controller.class);
-        for (Object obj : map.values())
-        {
-            beanObjectList.add(obj);
-        }
-        
         Configuration conf = new Configuration();
         conf.addRegistry(zkAddress);
+        
+        // 遍历容器中所有Controller和Service，获取其中标注了CrossReference的字段，将其替换成代理对象，此代理对象的方法调用将通过Rpc的方式调用服务端来实现 
+        logger.info("Start loading Cross references");
+        
+        String[] beanNames = applicationContext.getBeanDefinitionNames();
+        List<Object> beanObjectList = new ArrayList<>();
+        for (String beanName : beanNames)
+        {
+            Object obj = applicationContext.getBean(beanName);
+            beanObjectList.add(obj);
+        }
         
         CrossClientInitializer.bootStrap(beanObjectList, conf);
         
         logger.info("Fininshed loading Cross references");
-        
     }
     
 }
