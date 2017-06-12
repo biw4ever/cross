@@ -55,7 +55,7 @@ public class CrossServerBootStrap
                   @Override
                   public void initChannel(SocketChannel ch) throws Exception {
                     ChannelPipeline p = ch.pipeline();
-                        p.addLast(new LengthFieldBasedFrameDecoder(65536,0,4,0,0))
+                        p.addLast(new LengthFieldBasedFrameDecoder(Integer.MAX_VALUE,0,4,0,0))
                         .addLast(new RpcDecoder(RpcRequest.class))
                         .addLast(new RpcEncoder())
                         .addLast(new ServerHandler(handlerMap, threadPoolExecutorMap));
