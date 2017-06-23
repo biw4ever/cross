@@ -1,7 +1,10 @@
 package com.yjz.cross.server.init;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -40,63 +43,81 @@ public class CrossServerInitializer implements ApplicationContextAware
     
     @Value("#{cross['zk.address']}")
     private String zkAddress;
-
-    public static Configuration CONFIGURATION ;
+    
+    public static Configuration CONFIGURATION;
     
     private static final Map<String, Object> handlerMap = new HashMap<String, Object>();
     
-    private static final Map<String, ThreadPoolExecutor> threadPoolExecutorMap = new HashMap<String, ThreadPoolExecutor>();
+    private static final Map<String, ThreadPoolExecutor> threadPoolExecutorMap =
+        new HashMap<String, ThreadPoolExecutor>();
     
     public static ApplicationContext APPLICATIONCONTEXT;
-
-    public static void bootStrap(Object[] objs, Configuration conf) 
+    
+    public static void bootStrap(Object[] objs, Configuration conf)
     {
         CONFIGURATION = conf;
-
-        for(Object obj : objs)
+        
+        Registry registry = RegistryFactory.instance().getRegistry();
+        
+        for (Object obj : objs)
         {
-//            暂不实现多注册中心
-//            CrossService annotation = obj.getClass().getAnnotation(CrossService.class);
-//            String registryName = annotation.registryName();
+            // 暂不实现多注册中心
+            // CrossService annotation = obj.getClass().getAnnotation(CrossService.class);
+            // String registryName = annotation.registryName();
+            // Registry registry = RegistryFactory.instance().getRegistry(registryName);
             
-            Registry registry = RegistryFactory.instance().getRegistry();
-            
-            // 获取服务类的接口名称
+            /** 把服务通知给Registry */
             Class<?> clazz = obj.getClass().getInterfaces()[0];
+            registry.addServiceName(clazz.getName());
             
-            // 获取该服务的处理线程池
-            ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(16, 16, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
+            /** 获取该服务的处理线程池 */
+            ThreadPoolExecutor threadPoolExecutor =
+                new ThreadPoolExecutor(16, 16, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
             threadPoolExecutorMap.put(clazz.getName(), threadPoolExecutor);
-            
-            registry.regist(clazz.getName());
-            handlerMap.put(clazz.getName(), obj);    
+            handlerMap.put(clazz.getName(), obj);
         }
         
+        /** 启动netty服务端等待客户端连接和访问 */
         bootServer();
+        
+        /** 再连接Zk，将服务注册上Zk */
+        registry.registServices();
         
     }
     
     private static void bootServer()
     {
-        ExecutorService serverThreadExecutor = Executors.newSingleThreadExecutor();
-        serverThreadExecutor.execute(new Runnable()
-        { 
-            @Override
-            public void run()
+        CountDownLatch serverStartLatch = new CountDownLatch(1);
+        
+        try
+        {
+            ExecutorService serverThreadExecutor = Executors.newSingleThreadExecutor();
+            serverThreadExecutor.execute(new Runnable()
             {
-                CrossServerBootStrap bootStrap = new CrossServerBootStrap(CONFIGURATION.getServerAddress(), handlerMap, threadPoolExecutorMap);
-                try
+                @Override
+                public void run()
                 {
-                    bootStrap.bootStrap();
+                    CrossServerBootStrap bootStrap = new CrossServerBootStrap(CONFIGURATION.getServerAddress(),
+                        handlerMap, threadPoolExecutorMap, serverStartLatch);
+                    try
+                    {
+                        bootStrap.bootStrap();
+                    }
+                    catch (Exception e)
+                    {
+                        logger.error(e.getMessage(), e);
+                    }
                 }
-                catch (Exception e)
-                {
-                    logger.error(e.getMessage(), e);
-                }
-            }
-        });
+            });
+            
+            serverStartLatch.await();
+        }
+        catch (InterruptedException e)
+        {
+            logger.error(e.getMessage());
+        }
     }
-
+    
     @Override
     public void setApplicationContext(ApplicationContext applicationContext)
         throws BeansException

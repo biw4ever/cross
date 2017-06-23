@@ -6,6 +6,9 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -18,7 +21,6 @@ import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 
 import com.yjz.cross.CrossException;
 import com.yjz.cross.server.init.CrossServerInitializer;
@@ -43,17 +45,40 @@ public class ZkRegistry implements Registry
     
     ReentrantLock lock = new ReentrantLock();
     
-    private CountDownLatch latch = new CountDownLatch(1);
-    
     private String zkAddress;
     
     private String serverAddress;
+    
+    /** 收集注册到该Registry的所有服务名称 */
+    private Set<String> serviceNameSet = new HashSet<>();
     
     protected ZkRegistry(String registryName)
     {
         this.registryName = registryName;
         this.zkAddress = CrossServerInitializer.CONFIGURATION.getRegistryAddress(registryName);
         this.serverAddress = CrossServerInitializer.CONFIGURATION.getServerAddress();
+    }
+    
+    @Override
+    public void addServiceName(String serviceName)
+    {
+        serviceNameSet.add(serviceName);
+    }
+    
+    public void registServices()
+    {
+        for(String serviceName : serviceNameSet)
+        {
+            try
+            {
+                regist(serviceName);
+            }
+            catch (Exception e)
+            {
+                // nothing to do
+                continue;
+            }
+        }
     }
     
     public void regist(String serviceName)
@@ -71,8 +96,7 @@ public class ZkRegistry implements Registry
             }
             finally
             {
-                lock.unlock();
-                
+                lock.unlock(); 
             }
         }
         
@@ -94,7 +118,7 @@ public class ZkRegistry implements Registry
         }
         
         // 已连接则直接返回
-        if(isZkConnected())
+        if (isZkConnected())
         {
             return;
         }
@@ -103,9 +127,10 @@ public class ZkRegistry implements Registry
         {
             logger.info("Cross server connecting to zkServer " + zkAddress);
             
+            /** 阻塞等待zookeeper连接成功 */
+            CountDownLatch latch = new CountDownLatch(1);
             zk = new ZooKeeper(zkAddress, 8000, new Watcher()
             {
-                
                 @Override
                 public void process(WatchedEvent event)
                 {
@@ -115,9 +140,24 @@ public class ZkRegistry implements Registry
                         latch.countDown();
                     }
                 }
+            });      
+            latch.await();
+            
+            /** 设置Watcher，在检测到zookeeper会话失效或者连接中断后重新连接并注册所有服务和地址 */
+            zk.register(new Watcher()
+            {
+                @Override
+                public void process(WatchedEvent event)
+                {
+                    if(event.getState() == Event.KeeperState.Expired || event.getState() == Event.KeeperState.Disconnected)
+                    {
+                        logger.info("Cross server disconnected from zkServer " + zkAddress);
+                        zk = null;  
+                        registServices(); 
+                    }
+                }
             });
             
-            latch.await();
         }
         catch (IOException | InterruptedException e)
         {
@@ -141,7 +181,7 @@ public class ZkRegistry implements Registry
             }
             finally
             {
-                lock.unlock();  
+                lock.unlock();
             }
         }
         
@@ -169,7 +209,7 @@ public class ZkRegistry implements Registry
     }
     
     private void createServiceNode(String serviceName)
-    {
+    {  
         if (zk != null)
         {
             try
@@ -178,7 +218,7 @@ public class ZkRegistry implements Registry
                 Stat state = zk.exists(servicePath, false);
                 if (state == null)
                 {
-                    zk.create(servicePath, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                    zk.create(servicePath, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
                 }
             }
             catch (KeeperException | InterruptedException e)
@@ -201,7 +241,7 @@ public class ZkRegistry implements Registry
                 Stat state = zk.exists(serviceAddressPath, false);
                 if (state == null)
                 {
-                    zk.create(serviceAddressPath, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                    zk.create(serviceAddressPath, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
                 }
             }
             catch (KeeperException | InterruptedException e)
@@ -248,5 +288,49 @@ public class ZkRegistry implements Registry
             throw new CrossException(e);
         }
     }
+    
+    public static void main(String[] args)
+        throws IOException, InterruptedException
+    {
+        
+        CountDownLatch cd = new CountDownLatch(1);
+        ZooKeeper zk = new ZooKeeper("localhost:2181", 8000, new Watcher()
+        {
+            
+            @Override
+            public void process(WatchedEvent event)
+            {
+                cd.countDown();
+            }
+            
+        });
+        
+        cd.await();
+        
+        try
+        {
+           List<String> list = zk.getChildren(ROOT_NODE_PATH, false);
+           for(String serv : list)
+           {
+               List<String> addrList = zk.getChildren(ROOT_NODE_PATH+"/"+serv, false);
+               for(String addr : addrList)
+               {
+                   zk.delete(ROOT_NODE_PATH+"/"+serv+"/"+addr, -1);
+               }
+           }
+        }
+        catch (InterruptedException e)
+        {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+        catch (KeeperException e)
+        {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+    }
+
+    
     
 }
