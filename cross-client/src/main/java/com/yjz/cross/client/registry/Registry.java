@@ -1,6 +1,7 @@
 package com.yjz.cross.client.registry;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * @ClassName Registry
@@ -19,21 +20,21 @@ public interface Registry
     public List<String> getServiceAddresses(String serviceClassName);
     
     /**
-     * @Description 检查服务是否发生变，变更则更新对应ClientHandlerManager
+     * 检查根节点和服务是否发生变更，变更则更新对应ClientHandlerManager
+     * @Description (TODO这里用一句话描述这个方法的作用)
      * @author biw
+     * @param serviceClassList
      */
-    public void watchService(String serviceClassName);
-    
-    /**
-     * @Description 检查根节点下服务是否有变更，变更则更新对应ClientHandlerManager
-     * @author biw
-     */
-    public void watchRoot();
-    
+    public void watchRootAndServices();
+ 
     /** 
      * 关闭注册中心
      * @Description (TODO这里用一句话描述这个方法的作用)
      * @author biw
      */
     public void stop();
+    
+    public void setServiceClassName(Set<String> serviceClassNameList);
+    
+    public void setServiceClass(Set<Class<?>> serviceClassList);
 }

@@ -2,6 +2,7 @@ package com.yjz.cross.client.transport;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,7 +48,7 @@ public class ConnectionManager
     // 每个服务类对应一个clientHandlerManager
     private Map<String, ClientHandlerManager> clientHandlerManagerMap = new ConcurrentHashMap<>();
     
-    private ReentrantLock connectServerLock = new ReentrantLock();
+    private Map<String, ReentrantLock> connectServerLockMap = new HashMap<>();
     
     private ConnectionManager()
     {
@@ -88,17 +89,18 @@ public class ConnectionManager
     
     /**
      * 针对每一个服务代理类，并发的与已经注册的服务端建立连接
-     * 
      * @Description 监控根节点发生变更时触发
      * @author biw
      * @param serviceClassName
      * @param serviceAddresses
      * @param latch 控制每个连接建立完毕才进行下一步处理
      */
-    public void concurrentConnectServerByClassName(Set<String> serviceClassNameList)
+    public void concurrentConnectServerByClassName(Set<String> serviceClassNameSet)
     {
         Registry registry = RegistryFactory.instance().getRegistry();
-        for (String serviceClassName : serviceClassNameList)
+        registry.setServiceClassName(serviceClassNameSet);
+        
+        for (String serviceClassName : serviceClassNameSet)
         {
             List<String> serviceAddresses = registry.getServiceAddresses(serviceClassName);
             
@@ -114,7 +116,6 @@ public class ConnectionManager
                 });
             }
         }
-        
     }
     
     /**
@@ -133,7 +134,15 @@ public class ConnectionManager
             serviceAdressList.add(socketAddr.getHostName() + ":" + socketAddr.getPort());
         }
         
-        syncConnectServer(serviceClassName, serviceAdressList);
+        threadPoolExecutor.execute(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                syncConnectServer(serviceClassName, serviceAdressList);
+            }
+        });
+//        syncConnectServer(serviceClassName, serviceAdressList);
         
     }
     
@@ -149,23 +158,40 @@ public class ConnectionManager
     public void concurrentConnectServerByClass(Set<Class<?>> proxyClassList)
     {
         Registry registry = RegistryFactory.instance().getRegistry();
+        
+        // 用于阻塞等待所有代理类与服务端建立连接成功
+        CountDownLatch proxyClassLatch = new CountDownLatch(proxyClassList.size());
+        
         for (Class<?> proxyClass : proxyClassList)
         {
             List<String> serviceAddresses = registry.getServiceAddresses(proxyClass.getName());
             
-            if (!serviceAddresses.isEmpty())
+            if (serviceAddresses.isEmpty())
+            {
+                proxyClassLatch.countDown();
+            }
+            else
             {
                 threadPoolExecutor.execute(new Runnable()
                 {
                     @Override
                     public void run()
                     {
-                        syncConnectServer(proxyClass.getName(), serviceAddresses);
+                        syncConnectServer(proxyClass.getName(), serviceAddresses, proxyClassLatch);
                     }
                 });
             }
         }
         
+        /** 阻塞等待所有连接建立成功 */
+        try
+        {
+            proxyClassLatch.await();
+        }
+        catch (InterruptedException e)
+        {
+            logger.error(e.getMessage(), e);
+        }
     }
     
     /**
@@ -195,6 +221,20 @@ public class ConnectionManager
      */
     public void syncConnectServer(String serviceClassName, List<String> serviceAddresses)
     {
+        syncConnectServer(serviceClassName, serviceAddresses, null);
+    }
+    
+    /**
+     * 与已经注册该服务的服务端的建立连接
+     * 若serviceClassLatch不为空，则阻塞等待，否则不阻塞
+     * @author biw
+     * @param serviceClassName
+     * @param serviceAddresses
+     * @param serviceClassLatch 用于阻塞等待所有代理类与服务端建立连接成功
+     */
+    public void syncConnectServer(String serviceClassName, List<String> serviceAddresses, CountDownLatch serviceClassLatch)
+    {
+        ReentrantLock connectServerLock = createAndGetLock(serviceClassName);
         try
         {
             connectServerLock.lock();
@@ -215,8 +255,25 @@ public class ConnectionManager
         }
         finally
         {
-            connectServerLock.unlock();
+            if(serviceClassLatch != null)
+            {
+                serviceClassLatch.countDown();
+            }
+            
+            connectServerLock.unlock();  
         }
+    }
+    
+    private  ReentrantLock createAndGetLock(String serviceClassName)
+    {
+        if(connectServerLockMap.containsKey(serviceClassName))
+        {
+            return connectServerLockMap.get(serviceClassName);
+        }
+        
+        ReentrantLock lock = new  ReentrantLock();
+        connectServerLockMap.put(serviceClassName, lock);
+        return lock;
     }
     
     /**
@@ -263,7 +320,7 @@ public class ConnectionManager
                                 ChannelPipeline cp = ch.pipeline();
                                 
                                 cp.addLast(new RpcEncoder());
-                                cp.addLast(new LengthFieldBasedFrameDecoder(65536, 0, 4, 0, 0));
+                                cp.addLast(new LengthFieldBasedFrameDecoder(Integer.MAX_VALUE, 0, 4, 0, 0));
                                 cp.addLast(new RpcDecoder(RpcResponse.class));
                                 cp.addLast(new ClientHandler());
                             }
@@ -271,7 +328,7 @@ public class ConnectionManager
                         
                     // Start the client.
                     String[] args = serviceAddress.split(":");
-                    System.out.println("'netty connect to " + args[0] + ":" + args[1]);
+                    logger.debug("'netty connect to " + args[0] + ":" + args[1] + "for service " + serviceClassName);
                     ChannelFuture channelFuture = b.connect(args[0], Integer.parseInt(args[1])).sync();
                     
                     channelFuture.addListener(new ChannelFutureListener()
@@ -324,7 +381,7 @@ public class ConnectionManager
                     {
                         latch.countDown();
                     }
-                    logger.error(e.getMessage(), e);
+                    logger.error(e.getMessage());
                 }
                 finally
                 {

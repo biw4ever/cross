@@ -1,6 +1,7 @@
 package com.yjz.cross.server.transport;
 
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadPoolExecutor;
 
 import org.slf4j.Logger;
@@ -33,11 +34,14 @@ public class CrossServerBootStrap
     
     private Map<String, ThreadPoolExecutor> threadPoolExecutorMap;
     
-    public CrossServerBootStrap(String serverAddress, Map<String, Object> handlerMap, Map<String, ThreadPoolExecutor> threadPoolExecutorMap)
+    private CountDownLatch serverStartLatch;
+    
+    public CrossServerBootStrap(String serverAddress, Map<String, Object> handlerMap, Map<String, ThreadPoolExecutor> threadPoolExecutorMap, CountDownLatch serverStartLatch)
     {
         this.serverAddress = serverAddress;
         this.handlerMap = handlerMap;
         this.threadPoolExecutorMap = threadPoolExecutorMap;
+        this.serverStartLatch = serverStartLatch;
     }
     
     public void bootStrap() throws Exception
@@ -67,6 +71,7 @@ public class CrossServerBootStrap
             int port = Integer.parseInt(array[1]);
 
             ChannelFuture future = b.bind(host, port).sync();
+            serverStartLatch.countDown();
             logger.info("Cross Server started on port "+ port);
 
             future.channel().closeFuture().sync();

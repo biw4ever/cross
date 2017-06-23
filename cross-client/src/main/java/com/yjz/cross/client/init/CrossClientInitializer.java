@@ -80,19 +80,15 @@ public class CrossClientInitializer implements ApplicationContextAware
             }  
         }
         
-        // 建立每个代理类与Service的服务端的连接
+        // 将所有代理服务知会Registry
+        Registry registry = RegistryFactory.instance().getRegistry();
+        registry.setServiceClass(proxyClassList);
+        
+        // 建立每个代理类与Service的服务端的连接   
         connectServer(proxyClassList);
         
-        // Watch service updates
-        for (Class<?> proxyClass : proxyClassList)
-        {
-            Registry registry = RegistryFactory.instance().getRegistry();
-            registry.watchService(proxyClass.getName());
-        }
-        
-        // Watch Root Node for service updates
-        Registry registry = RegistryFactory.instance().getRegistry();
-        registry.watchRoot();
+        // Watch Root Node for service updates and services for address update
+        registry.watchRootAndServices();
     }
     
     private static void proxyReferences(Object obj, Field field, Class<?> proxyClass)

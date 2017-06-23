@@ -13,6 +13,7 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.Watcher.Event;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,10 +44,25 @@ public class ZkRegistry implements Registry
     
     private String zkAddress;
     
+    private Set<String> serviceClassNameSet = new HashSet<>();
+    
     protected ZkRegistry(String registryName)
     {
         this.registryName = registryName;
         this.zkAddress = CrossClientInitializer.CONFIGURATION.getRegistryAddress(registryName);
+    }
+    
+    public void setServiceClassName(Set<String> serviceClassNameList)
+    {
+        serviceClassNameSet.addAll(serviceClassNameList);
+    }
+    
+    public void setServiceClass(Set<Class<?>> serviceClassList)
+    {
+        for (Class<?> serviceClass : serviceClassList)
+        {
+            serviceClassNameSet.add(serviceClass.getName());
+        }
     }
     
     public List<String> getServiceAddresses(String serviceClassName)
@@ -83,7 +99,6 @@ public class ZkRegistry implements Registry
         if (zkAddress == null)
         {
             logger.error("'zk.address' is not configured in 'application.properties'!");
-            throw new CrossException("'zk.address' is not configured in 'application.properties'!");
         }
         
         synchronized (ROOT_NODE_PATH)
@@ -108,25 +123,55 @@ public class ZkRegistry implements Registry
                     });
                     
                     latch.await();
+                    
+                    /** 设置Watcher，在检测到zookeeper会话失效或者连接中断时设置zk为null，并重连 */
+                    zk.register(new Watcher()
+                    {
+                        @Override
+                        public void process(WatchedEvent event)
+                        {
+                            if (event.getState() == Event.KeeperState.Expired
+                                || event.getState() == Event.KeeperState.Disconnected)
+                            {
+                                logger.info("Cross Client disconnected from zkServer " + zkAddress);
+                                zk = null;
+                                watchRootAndServices();
+                            }
+                        }
+                    });
                 }
                 catch (IOException | InterruptedException e)
                 {
                     logger.error(e.getMessage(), e);
-                    throw new CrossException(e);
                 }
             }
-        }  
+        }
     }
     
     @Override
-    public void watchService(String serviceClassName)
+    public void watchRootAndServices()
+    {
+        watchRoot(false);
+        
+        for (String serviceClassName : serviceClassNameSet)
+        {
+            watchService(serviceClassName, false);
+        }
+    }
+    
+    /**
+     * @Description 检查服务是否发生变更，变更则更新对应ClientHandlerManager
+     * @author biw
+     * @param serviceClassName
+     */
+    private void watchService(String serviceClassName, boolean updateFlag)
     {
         if (zk == null)
         {
             connectZk();
         }
         
-        if(zk == null)
+        if (zk == null)
         {
             return;
         }
@@ -141,16 +186,17 @@ public class ZkRegistry implements Registry
                 {
                     if (event.getType() == Event.EventType.NodeChildrenChanged)
                     {
-                        watchService(serviceClassName);
+                        watchService(serviceClassName, true);
                     }
                 }
             });
             
-            serverAddrList = (serverAddrList == null) ? new ArrayList<String>(0) : serverAddrList;
-            
-            logger.debug("service adrresses: {}", serverAddrList);
-            logger.info("Service discovery triggered updating connected server node.");
-            updateClientHanderManager(serviceClassName, serverAddrList);
+            if (updateFlag && !serverAddrList.isEmpty())
+            {
+                logger.info(serviceClassName + " adrresses: {}", serverAddrList);
+                logger.info("Service discovery triggered updating connected server node for :" + serviceClassName);
+                updateClientHanderManager(serviceClassName, serverAddrList);
+            }
         }
         catch (KeeperException | InterruptedException e)
         {
@@ -175,15 +221,18 @@ public class ZkRegistry implements Registry
         }
     }
     
-    @Override
-    public void watchRoot()
+    /**
+     * @Description 检查根节点是否发生变更，变更则更新对应ClientHandlerManager
+     * @author biw
+     */
+    private void watchRoot(boolean updateFlag)
     {
         if (zk == null)
         {
             connectZk();
         }
         
-        if(zk == null)
+        if (zk == null)
         {
             return;
         }
@@ -197,15 +246,17 @@ public class ZkRegistry implements Registry
                 {
                     if (event.getType() == Event.EventType.NodeChildrenChanged)
                     {
-                        watchRoot();
+                        watchRoot(true);
                     }
                 }
             });
             
-            logger.info("Service discovery triggered updating connected service node.");
-            
-            serviceClassNameList = (serviceClassNameList == null) ? new ArrayList<String>(0) : serviceClassNameList;
-            updateService(serviceClassNameList);
+            if (updateFlag)
+            {
+                logger.info("Root Service discovery triggered updating connected service node.");
+                serviceClassNameList = (serviceClassNameList == null) ? new ArrayList<String>(0) : serviceClassNameList;
+                updateService(serviceClassNameList);
+            }
         }
         catch (KeeperException | InterruptedException e)
         {

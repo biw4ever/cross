@@ -33,6 +33,13 @@ public class ClientHandler extends SimpleChannelInboundHandler<RpcResponse>
     
     private SocketAddress remotePeer;
     
+    private ClientHandlerManager clientHandlerManager;
+    
+    public void setClientHandlerManager(ClientHandlerManager clientHandlerManager)
+    {
+        this.clientHandlerManager = clientHandlerManager;
+    }
+    
     public Channel getChannel()
     {
         return channel;
@@ -76,13 +83,17 @@ public class ClientHandler extends SimpleChannelInboundHandler<RpcResponse>
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause)
         throws Exception
     {
-        LOGGER.error("client caught exception", cause);
+        LOGGER.error(cause.getMessage() + remotePeer.toString());
         ctx.close();
+        this.clientHandlerManager.rmClientHander(this);
     }
     
     public void close()
     {
-        channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
+        if(channel.isActive())
+        {
+            channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
+        }
     }
     
     public RPCFuture sendRequest(RpcRequest request)
@@ -92,5 +103,15 @@ public class ClientHandler extends SimpleChannelInboundHandler<RpcResponse>
         channel.writeAndFlush(request);
         
         return rpcFuture;
+    }
+    
+    /**
+     * @Description 返回ClientHandler使用的Channel是否处于正常连接中
+     * @author biw
+     * @return
+     */
+    public boolean isActive()
+    {
+        return channel.isActive();
     }
 }

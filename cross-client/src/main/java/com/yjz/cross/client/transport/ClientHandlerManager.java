@@ -60,8 +60,10 @@ public class ClientHandlerManager
     
     public void addClientHander(ClientHandler clientHander)
     {
+        clientHander.setClientHandlerManager(this);
         clientHandlerList.add(clientHander);
         socketAddressSet.add((InetSocketAddress)clientHander.getRemotePeer());
+        
     }
     
     public void rmClientHander(ClientHandler clientHander)
@@ -130,7 +132,17 @@ public class ClientHandlerManager
             roundRobin.set(0);
         }
         
-        return clientHandlerList.get(index);
+        // 获取轮询的Clienthandler，如果对应channel连接已中断，则删除该ClientHandler并轮询到下一个Clienthandler
+        ClientHandler  clientHanlder = clientHandlerList.get(index);
+        if(clientHanlder.isActive())
+        {
+            return clientHanlder; 
+        }
+        else
+        {
+            rmClientHander(clientHanlder);
+            return chooseClientHandler();
+        }
     }
     
     public void updateClientHandler(List<String> addressList)
