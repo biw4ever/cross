@@ -41,6 +41,11 @@ public class ClientHandlerManager
         this.serviceClassName = serviceClassName;
     }
     
+    public String getServiceClassName()
+    {
+        return this.serviceClassName;
+    }
+    
     public boolean hasClientHandler()
     {
         return !clientHandlerList.isEmpty();
@@ -199,6 +204,11 @@ public class ClientHandlerManager
                 clientHandler.close();
             }
         }
+    }
+    
+    public List<ClientHandler> getClientHandlerList()
+    {
+        return this.clientHandlerList;
     }
     
 }

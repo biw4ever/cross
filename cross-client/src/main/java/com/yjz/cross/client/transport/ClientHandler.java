@@ -50,6 +50,11 @@ public class ClientHandler extends SimpleChannelInboundHandler<RpcResponse>
         return remotePeer;
     }
     
+    public SocketAddress getLocalPeer()
+    {
+        return channel.localAddress();
+    }
+    
     @Override
     public void channelActive(ChannelHandlerContext ctx)
         throws Exception
@@ -113,5 +118,10 @@ public class ClientHandler extends SimpleChannelInboundHandler<RpcResponse>
     public boolean isActive()
     {
         return channel.isActive();
+    }
+    
+    public String getServiceClassName()
+    {
+        return clientHandlerManager.getServiceClassName();
     }
 }

@@ -37,11 +37,11 @@
 				<artifactId>spring-context</artifactId>
 				<version>4.3.3.RELEASE</version>
 			</dependency>
-			
+
 			<dependency>
-			<groupId>org.springframework</groupId>
-			<artifactId>spring-aop</artifactId>
-			<version>4.3.3.RELEASE</version>
+				<groupId>org.springframework</groupId>
+				<artifactId>spring-aop</artifactId>
+				<version>4.3.3.RELEASE</version>
 			</dependency>
 
 			<dependency>
@@ -109,6 +109,18 @@
 				<artifactId>jackson-core</artifactId>
 				<version>2.7.2</version>
 			</dependency>
+
+			<dependency>
+				<groupId>org.apache.curator</groupId>
+				<artifactId>curator-framework</artifactId>
+				<version>3.3.0</version>
+			</dependency>
+			
+			<dependency>
+				<groupId>org.apache.curator</groupId>
+				<artifactId>curator-recipes</artifactId>
+				<version>3.3.0</version>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 
@@ -146,23 +158,23 @@
 				</plugin>
 			</plugins>
 		</pluginManagement>
-		
-		
+
+
 	</build>
-	
+
 	<distributionManagement>
-			<repository>
-				<id>releases</id>
-				<name>maven-releases</name>
-				<url>http://10.159.62.231:9090/repository/maven-releases/</url>
-			</repository>
+		<repository>
+			<id>releases</id>
+			<name>maven-releases</name>
+			<url>http://10.159.62.231:9090/repository/maven-releases/</url>
+		</repository>
 
-			<snapshotRepository>
-				<id>snapshots</id>
-				<name>maven-snapshots</name>
-				<url>http://10.159.62.231:9090/repository/maven-snapshots/</url>
-			</snapshotRepository>
+		<snapshotRepository>
+			<id>snapshots</id>
+			<name>maven-snapshots</name>
+			<url>http://10.159.62.231:9090/repository/maven-snapshots/</url>
+		</snapshotRepository>
 
-		</distributionManagement>
+	</distributionManagement>
 
 </project>

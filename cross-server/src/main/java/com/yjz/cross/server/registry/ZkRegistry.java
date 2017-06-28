@@ -37,7 +37,7 @@ public class ZkRegistry implements Registry
 {
     private Logger logger = LoggerFactory.getLogger(this.getClass());
     
-    private static final String ROOT_NODE_PATH = "/cross";
+    private static final String SERVER_ROOT_NODE_PATH = "/cross-server";
     
     private String registryName = null;
     
@@ -194,10 +194,10 @@ public class ZkRegistry implements Registry
         {
             try
             {
-                Stat state = zk.exists(ROOT_NODE_PATH, false);
+                Stat state = zk.exists(SERVER_ROOT_NODE_PATH, false);
                 if (state == null)
                 {
-                    zk.create(ROOT_NODE_PATH, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                    zk.create(SERVER_ROOT_NODE_PATH, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
                 }
             }
             catch (KeeperException | InterruptedException e)
@@ -214,11 +214,11 @@ public class ZkRegistry implements Registry
         {
             try
             {
-                String servicePath = ROOT_NODE_PATH + "/" + serviceName;
+                String servicePath = SERVER_ROOT_NODE_PATH + "/" + serviceName;
                 Stat state = zk.exists(servicePath, false);
                 if (state == null)
                 {
-                    zk.create(servicePath, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+                    zk.create(servicePath, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
                 }
             }
             catch (KeeperException | InterruptedException e)
@@ -236,7 +236,7 @@ public class ZkRegistry implements Registry
             try
             {
                 String localAddress = getLocalAddress();
-                String serviceAddressPath = ROOT_NODE_PATH + "/" + serviceName + "/" + localAddress;
+                String serviceAddressPath = SERVER_ROOT_NODE_PATH + "/" + serviceName + "/" + localAddress;
                 
                 Stat state = zk.exists(serviceAddressPath, false);
                 if (state == null)
@@ -309,15 +309,17 @@ public class ZkRegistry implements Registry
         
         try
         {
-           List<String> list = zk.getChildren(ROOT_NODE_PATH, false);
+           List<String> list = zk.getChildren(SERVER_ROOT_NODE_PATH, false);
            for(String serv : list)
            {
-               List<String> addrList = zk.getChildren(ROOT_NODE_PATH+"/"+serv, false);
+               List<String> addrList = zk.getChildren(SERVER_ROOT_NODE_PATH+"/"+serv, false);
                for(String addr : addrList)
                {
-                   zk.delete(ROOT_NODE_PATH+"/"+serv+"/"+addr, -1);
+                   zk.delete(SERVER_ROOT_NODE_PATH+"/"+serv+"/"+addr, -1);
                }
+               zk.delete(SERVER_ROOT_NODE_PATH+"/"+serv, -1);
            }
+           zk.delete(SERVER_ROOT_NODE_PATH, -1);
         }
         catch (InterruptedException e)
         {

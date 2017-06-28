@@ -19,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import com.yjz.cross.CrossException;
 import com.yjz.cross.client.registry.Registry;
 import com.yjz.cross.client.registry.RegistryFactory;
+import com.yjz.cross.client.util.CommonUtil;
 import com.yjz.cross.codec.RpcDecoder;
 import com.yjz.cross.codec.RpcEncoder;
 import com.yjz.cross.codec.RpcResponse;
@@ -340,9 +341,15 @@ public class ConnectionManager
                             if (channelFuture.isSuccess())
                             {
                                 logger.debug("Successfully connect to remote server. remote peer = " + serviceAddress);
+                                
+                                /** 创建ClientHandler并且加入ClientHandlerManager */
                                 ClientHandler clientHander =
                                     channelFuture.channel().pipeline().get(ClientHandler.class);
                                 addHandler(serviceClassName, clientHander);
+                                
+                                /** 将客户端节点注册到zk服务节点下 */
+                                Registry registry = RegistryFactory.instance().getRegistry();
+                                registry.registClientForServer(serviceClassName, serviceAddress, CommonUtil.getServiceAddress(clientHander.getLocalPeer()));
                             }
                             else
                             {

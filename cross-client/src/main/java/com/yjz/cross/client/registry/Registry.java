@@ -25,7 +25,7 @@ public interface Registry
      * @author biw
      * @param serviceClassList
      */
-    public void watchRootAndServices();
+    public void watchServerRootAndServices();
  
     /** 
      * 关闭注册中心
@@ -37,4 +37,19 @@ public interface Registry
     public void setServiceClassName(Set<String> serviceClassNameList);
     
     public void setServiceClass(Set<Class<?>> serviceClassList);
+    
+    /**
+     * @Description 将客户端节点注册到zk服务节点下
+     * @author biw
+     * @param serviceClassName
+     * @param serviceAddress
+     * @param localAddress
+     */
+    public void registClientForServer(String serviceClassName, String serviceAddress, String localAddress);
+    
+    /**
+     * @Description 将已连接的客户端和服务端注册到cross-client根节点下
+     * @author biw
+     */
+    public void registClientRoot();
 }

@@ -4,7 +4,6 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import org.slf4j.Logger;
@@ -14,8 +13,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.stereotype.Component;
-import org.springframework.stereotype.Controller;
-import org.springframework.stereotype.Service;
 import org.springframework.util.ReflectionUtils;
 
 import com.yjz.cross.CrossException;
@@ -83,12 +80,15 @@ public class CrossClientInitializer implements ApplicationContextAware
         // 将所有代理服务知会Registry
         Registry registry = RegistryFactory.instance().getRegistry();
         registry.setServiceClass(proxyClassList);
-        
+ 
         // 建立每个代理类与Service的服务端的连接   
         connectServer(proxyClassList);
         
-        // Watch Root Node for service updates and services for address update
-        registry.watchRootAndServices();
+        // 将已连接的客户端和服务端注册到cross-client根节点下
+        registry.registClientRoot();
+        
+        // Watch ServerRoot Node for service updates and services for address update
+        registry.watchServerRootAndServices();
     }
     
     private static void proxyReferences(Object obj, Field field, Class<?> proxyClass)

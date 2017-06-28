@@ -7,20 +7,29 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 
+import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.framework.CuratorFrameworkFactory;
+import org.apache.curator.framework.recipes.locks.InterProcessMutex;
+import org.apache.curator.retry.ExponentialBackoffRetry;
+import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
-import org.apache.zookeeper.Watcher.Event;
+import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.yjz.cross.CrossException;
 import com.yjz.cross.client.init.CrossClientInitializer;
+import com.yjz.cross.client.transport.ClientHandler;
 import com.yjz.cross.client.transport.ClientHandlerManager;
 import com.yjz.cross.client.transport.ConnectionManager;
+import com.yjz.cross.client.util.CommonUtil;
 
 /**
  * 
@@ -34,7 +43,11 @@ public class ZkRegistry implements Registry
 {
     private static final Logger logger = LoggerFactory.getLogger(ZkRegistry.class);
     
-    private static final String ROOT_NODE_PATH = "/cross";
+    private static final String SERVER_ROOT_NODE_PATH = "/cross-server";
+    
+    private static final String CLIENT_ROOT_NODE_PATH = "/cross-client";
+    
+    private static final String LOCK_ROOT_NODE_PATH = "/locks-server";
     
     private String registryName = null;
     
@@ -46,10 +59,14 @@ public class ZkRegistry implements Registry
     
     private Set<String> serviceClassNameSet = new HashSet<>();
     
+    private ZkNodeMutexManager mutexManager = null;
+    
     protected ZkRegistry(String registryName)
     {
         this.registryName = registryName;
         this.zkAddress = CrossClientInitializer.CONFIGURATION.getRegistryAddress(registryName);
+        this.mutexManager = new ZkNodeMutexManager(this.zkAddress);
+        
     }
     
     public void setServiceClassName(Set<String> serviceClassNameList)
@@ -76,7 +93,7 @@ public class ZkRegistry implements Registry
         {
             try
             {
-                String servicePath = ROOT_NODE_PATH + "/" + serviceClassName;
+                String servicePath = SERVER_ROOT_NODE_PATH + "/" + serviceClassName;
                 List<String> addrList = zk.getChildren(servicePath, false);
                 return addrList;
             }
@@ -101,7 +118,7 @@ public class ZkRegistry implements Registry
             logger.error("'zk.address' is not configured in 'application.properties'!");
         }
         
-        synchronized (ROOT_NODE_PATH)
+        synchronized (SERVER_ROOT_NODE_PATH)
         {
             if (zk == null)
             {
@@ -109,7 +126,7 @@ public class ZkRegistry implements Registry
                 {
                     logger.info("Cross client connecting to zk server " + zkAddress);
                     
-                    zk = new ZooKeeper(zkAddress, 5000, new Watcher()
+                    zk = new ZooKeeper(zkAddress, 60000, new Watcher()
                     {
                         @Override
                         public void process(WatchedEvent event)
@@ -135,7 +152,7 @@ public class ZkRegistry implements Registry
                             {
                                 logger.info("Cross Client disconnected from zkServer " + zkAddress);
                                 zk = null;
-                                watchRootAndServices();
+                                watchServerRootAndServices();
                             }
                         }
                     });
@@ -149,7 +166,7 @@ public class ZkRegistry implements Registry
     }
     
     @Override
-    public void watchRootAndServices()
+    public void watchServerRootAndServices()
     {
         watchRoot(false);
         
@@ -178,7 +195,7 @@ public class ZkRegistry implements Registry
         
         try
         {
-            String servicePath = ROOT_NODE_PATH + "/" + serviceClassName;
+            String servicePath = SERVER_ROOT_NODE_PATH + "/" + serviceClassName;
             List<String> serverAddrList = zk.getChildren(servicePath, new Watcher()
             {
                 @Override
@@ -239,7 +256,7 @@ public class ZkRegistry implements Registry
         
         try
         {
-            List<String> serviceClassNameList = zk.getChildren(ROOT_NODE_PATH, new Watcher()
+            List<String> serviceClassNameList = zk.getChildren(SERVER_ROOT_NODE_PATH, new Watcher()
             {
                 @Override
                 public void process(WatchedEvent event)
@@ -321,6 +338,178 @@ public class ZkRegistry implements Registry
                 logger.error(e.getMessage(), e);
                 throw new CrossException(e);
             }
+        }
+    }
+    
+    @Override
+    public void registClientForServer(String serviceClassName, String serviceAddress, String localAddress)
+    {
+        if (zk == null)
+        {
+            connectZk();
+        }
+        
+        if (zk != null)
+        {
+            InterProcessMutex lock = null;
+            try
+            {
+                String serverAddressPath = SERVER_ROOT_NODE_PATH + "/" + serviceClassName + "/" + serviceAddress;
+                Stat state = zk.exists(serverAddressPath, false);
+                if (state != null)
+                {
+                    lock = this.mutexManager
+                        .getInterProcessMutex(LOCK_ROOT_NODE_PATH + "/" + serviceClassName + "/" + serviceAddress);
+                    lock.acquire();
+                    
+                    byte[] data = zk.getData(serverAddressPath, false, state);
+                    String oldClientAddr = new String(data);
+                    String newClientAddr = oldClientAddr + ";" + localAddress;
+                    zk.setData(serverAddressPath, newClientAddr.getBytes(), -1);
+                }
+            }
+            catch (Exception e)
+            {
+                logger.error(e.getMessage(), e);
+            }
+            finally
+            {
+                if (lock != null)
+                {
+                    try
+                    {
+                        lock.release();
+                    }
+                    catch (Exception e)
+                    {
+                        logger.error(e.getMessage(), e);
+                    }
+                }
+            }
+        }
+    }
+    
+    public void registClientRoot()
+    {
+        this.createClientRootNode();
+        
+        Map<String, ClientHandlerManager> handlerManagerMap = ConnectionManager.instance().getHandlerManagers();
+        for (ClientHandlerManager chm : handlerManagerMap.values())
+        {
+            String serviceClassName = chm.getServiceClassName();
+            this.createClientServiceNode(serviceClassName);
+            
+            List<ClientHandler> clientHandlerList = chm.getClientHandlerList();
+            for (ClientHandler ch : clientHandlerList)
+            {
+                String serviceAddress = CommonUtil.getServiceAddress(ch.getRemotePeer());
+                String localAddress = CommonUtil.getServiceAddress(ch.getLocalPeer());
+                this.createClientAddrNode(serviceClassName, serviceAddress, localAddress);
+            }
+        }
+    }
+    
+    public void registClientService(String serviceClassName)
+    {
+        if (zk == null)
+        {
+            return;
+        }
+        
+        createClientServiceNode(serviceClassName);
+    }
+    
+    private void createClientRootNode()
+    {
+        if (zk == null)
+        {
+            connectZk();
+        }
+        
+        if (zk != null)
+        {
+            try
+            {
+                Stat state = zk.exists(CLIENT_ROOT_NODE_PATH, false);
+                if (state == null)
+                {
+                    zk.create(CLIENT_ROOT_NODE_PATH, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                }
+            }
+            catch (KeeperException | InterruptedException e)
+            {
+                logger.error(e.getMessage(), e);
+                throw new CrossException(e);
+            }
+        }
+    }
+    
+    private void createClientServiceNode(String serviceClassName)
+    {
+        if (zk != null)
+        {
+            try
+            {
+                String servicePath = CLIENT_ROOT_NODE_PATH + "/" + serviceClassName;
+                Stat state = zk.exists(servicePath, false);
+                if (state == null)
+                {
+                    zk.create(servicePath, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                }
+            }
+            catch (KeeperException | InterruptedException e)
+            {
+                logger.error(e.getMessage(), e);
+                throw new CrossException(e);
+            }
+        }
+    }
+    
+    public void createClientAddrNode(String serviceClassName, String serviceAddress, String localAddress)
+    {
+        if (zk != null)
+        {
+            try
+            {
+                String servicePath = CLIENT_ROOT_NODE_PATH + "/" + serviceClassName;
+                Stat state = zk.exists(servicePath, false);
+                if (state != null)
+                {
+                    zk.setData(servicePath, serviceAddress.getBytes(), -1);
+                }
+            }
+            catch (KeeperException | InterruptedException e)
+            {
+                logger.error(e.getMessage(), e);
+                throw new CrossException(e);
+            }
+        }
+        
+    }
+    
+    private static class ZkNodeMutexManager
+    {
+        private CuratorFramework zkclient = null;
+        
+        private Map<String, InterProcessMutex> zkNodeMutexMap = new ConcurrentHashMap<>();
+        
+        public ZkNodeMutexManager(String zkAddress)
+        {
+            this.zkclient = CuratorFrameworkFactory.newClient(zkAddress, new ExponentialBackoffRetry(1000, 3));
+            this.zkclient.start();
+        }
+        
+        public InterProcessMutex getInterProcessMutex(String lockPath)
+        {
+            if (zkNodeMutexMap.containsKey(lockPath))
+            {
+                return zkNodeMutexMap.get(lockPath);
+            }
+            
+            InterProcessMutex lock = new InterProcessMutex(this.zkclient, lockPath);
+            zkNodeMutexMap.put(lockPath, lock);
+            
+            return lock;
         }
     }
 }
