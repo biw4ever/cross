@@ -2,13 +2,14 @@ package com.yjz.cross.codec;
 
 /**
  * RPC Response
- * @author huangyong
+ * @author biw
  */
 public class RpcResponse {
 
     private String requestId;
     private String error;
     private Object result;
+    private Class<?> returnType;
 
     public boolean isError() {
         return error != null;
@@ -36,5 +37,15 @@ public class RpcResponse {
 
     public void setResult(Object result) {
         this.result = result;
+    }
+
+    public Class<?> getReturnType()
+    {
+        return returnType;
+    }
+
+    public void setReturnType(Class<?> returnType)
+    {
+        this.returnType = returnType;
     }
 }
