@@ -49,7 +49,7 @@ public class ConnectionManager
     // 每个服务类对应一个clientHandlerManager
     private Map<String, ClientHandlerManager> clientHandlerManagerMap = new ConcurrentHashMap<>();
     
-    private Map<String, ReentrantLock> connectServerLockMap = new HashMap<>();
+    private Map<String, ReentrantLock> connectServerLockMap = new ConcurrentHashMap<>();
     
     private ConnectionManager()
     {
@@ -90,6 +90,7 @@ public class ConnectionManager
     
     /**
      * 针对每一个服务代理类，并发的与已经注册的服务端建立连接
+     * 
      * @Description 监控根节点发生变更时触发
      * @author biw
      * @param serviceClassName
@@ -143,7 +144,7 @@ public class ConnectionManager
                 syncConnectServer(serviceClassName, serviceAdressList);
             }
         });
-//        syncConnectServer(serviceClassName, serviceAdressList);
+        // syncConnectServer(serviceClassName, serviceAdressList);
         
     }
     
@@ -226,14 +227,15 @@ public class ConnectionManager
     }
     
     /**
-     * 与已经注册该服务的服务端的建立连接
-     * 若serviceClassLatch不为空，则阻塞等待，否则不阻塞
+     * 与已经注册该服务的服务端的建立连接 若serviceClassLatch不为空，则阻塞等待，否则不阻塞
+     * 
      * @author biw
      * @param serviceClassName
      * @param serviceAddresses
      * @param serviceClassLatch 用于阻塞等待所有代理类与服务端建立连接成功
      */
-    public void syncConnectServer(String serviceClassName, List<String> serviceAddresses, CountDownLatch serviceClassLatch)
+    public void syncConnectServer(String serviceClassName, List<String> serviceAddresses,
+        CountDownLatch serviceClassLatch)
     {
         ReentrantLock connectServerLock = createAndGetLock(serviceClassName);
         try
@@ -256,23 +258,23 @@ public class ConnectionManager
         }
         finally
         {
-            if(serviceClassLatch != null)
+            if (serviceClassLatch != null)
             {
                 serviceClassLatch.countDown();
             }
             
-            connectServerLock.unlock();  
+            connectServerLock.unlock();
         }
     }
     
-    private  ReentrantLock createAndGetLock(String serviceClassName)
+    private ReentrantLock createAndGetLock(String serviceClassName)
     {
-        if(connectServerLockMap.containsKey(serviceClassName))
+        if (connectServerLockMap.containsKey(serviceClassName))
         {
             return connectServerLockMap.get(serviceClassName);
         }
         
-        ReentrantLock lock = new  ReentrantLock();
+        ReentrantLock lock = new ReentrantLock();
         connectServerLockMap.put(serviceClassName, lock);
         return lock;
     }
@@ -338,27 +340,36 @@ public class ConnectionManager
                         public void operationComplete(final ChannelFuture channelFuture)
                             throws Exception
                         {
-                            if (channelFuture.isSuccess())
+                            try
                             {
-                                logger.debug("Successfully connect to remote server. remote peer = " + serviceAddress);
-                                
-                                /** 创建ClientHandler并且加入ClientHandlerManager */
-                                ClientHandler clientHander =
-                                    channelFuture.channel().pipeline().get(ClientHandler.class);
-                                addHandler(serviceClassName, clientHander);
-                                
-                                /** 将客户端节点注册到zk服务节点下 */
-                                Registry registry = RegistryFactory.instance().getRegistry();
-                                registry.registClientForServer(serviceClassName, serviceAddress, CommonUtil.getServiceAddress(clientHander.getLocalPeer()));
+                                if (channelFuture.isSuccess())
+                                {
+                                    logger.debug(
+                                        "Successfully connect to remote server. remote peer = " + serviceAddress);
+                                    
+                                    /** 创建ClientHandler并且加入ClientHandlerManager */
+                                    ClientHandler clientHander =
+                                        channelFuture.channel().pipeline().get(ClientHandler.class);
+                                    addHandler(serviceClassName, clientHander);
+                                    
+                                    /** 将客户端节点注册到zk服务节点下 */
+                                    Registry registry = RegistryFactory.instance().getRegistry();
+                                    registry.registClientForServer(serviceClassName,
+                                        serviceAddress,
+                                        CommonUtil.getServiceAddress(clientHander.getLocalPeer()));
+                                }
+                                else
+                                {
+                                    logger.error("Failed connect to remote server. remote peer = " + serviceAddress);
+                                }
                             }
-                            else
+                            finally
                             {
-                                logger.error("Failed connect to remote server. remote peer = " + serviceAddress);
-                            }
-                            
-                            if (latch != null)
-                            {
-                                latch.countDown();
+                                
+                                if (latch != null)
+                                {
+                                    latch.countDown();
+                                }
                             }
                         }
                     });

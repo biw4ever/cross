@@ -217,7 +217,7 @@ public class ZkRegistry implements Registry
         }
         catch (KeeperException | InterruptedException e)
         {
-            logger.error(e.getMessage());
+            logger.debug(e.getMessage());
         }
     }
     
