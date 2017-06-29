@@ -339,6 +339,8 @@ public class ZkRegistry implements Registry
                 throw new CrossException(e);
             }
         }
+        
+        mutexManager.close();
     }
     
     @Override
@@ -389,6 +391,9 @@ public class ZkRegistry implements Registry
         }
     }
     
+    /**
+     * 将所有已连接的服务端和客户端加到/cross-client根节点中
+     */
     public void registClientRoot()
     {
         this.createClientRootNode();
@@ -419,6 +424,10 @@ public class ZkRegistry implements Registry
         createClientServiceNode(serviceClassName);
     }
     
+    /**
+     * @Description 创建/cross-client根节点
+     * @author biw
+     */
     private void createClientRootNode()
     {
         if (zk == null)
@@ -444,6 +453,11 @@ public class ZkRegistry implements Registry
         }
     }
     
+    /**
+     * @Description 在cross-client根节点下创建服务名称
+     * @author biw
+     * @param serviceClassName
+     */
     private void createClientServiceNode(String serviceClassName)
     {
         if (zk != null)
@@ -465,6 +479,13 @@ public class ZkRegistry implements Registry
         }
     }
     
+    /**
+     * @Description 在‘cross-client/服务名称’节点下创建客户端地址节点
+     * @author biw
+     * @param serviceClassName
+     * @param serviceAddress
+     * @param localAddress
+     */
     public void createClientAddrNode(String serviceClassName, String serviceAddress, String localAddress)
     {
         if (zk != null)
@@ -487,6 +508,13 @@ public class ZkRegistry implements Registry
         
     }
     
+    /**
+     * @ClassName ZkNodeMutexManager
+     * @Description 锁管理器，针对cross-server下的服务端地址节点，为确保依次加入客户端节点地址，进行加锁处理
+     * @author biw
+     * @Date Jun 29, 2017 9:03:24 AM
+     * @version 1.0.0
+     */
     private static class ZkNodeMutexManager
     {
         private CuratorFramework zkclient = null;
@@ -510,6 +538,11 @@ public class ZkRegistry implements Registry
             zkNodeMutexMap.put(lockPath, lock);
             
             return lock;
+        }
+        
+        public void close()
+        {
+            zkclient.close();
         }
     }
 }
