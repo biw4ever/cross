@@ -46,10 +46,9 @@ public class ServerHandler extends SimpleChannelInboundHandler<RpcRequest> {
                 RpcResponse response = new RpcResponse();
                 response.setRequestId(request.getRequestId());
                 try {
-                    Object result = handle(request);
-                    response.setResult(result);
+                    handle(request, response);
                 } catch (Throwable t) {
-                    response.setError(t.toString());
+                    response.setError(t.getMessage());
                     LOGGER.error("RPC Server handle request error",t);
                 }
                 ctx.writeAndFlush(response).addListener(new ChannelFutureListener() {
@@ -63,7 +62,7 @@ public class ServerHandler extends SimpleChannelInboundHandler<RpcRequest> {
         });
     }
 
-    private Object handle(RpcRequest request) throws Throwable {
+    private void handle(RpcRequest request, RpcResponse response) throws Throwable {
         String className = request.getClassName();
         Object serviceBean = handlerMap.get(className);
 
@@ -93,18 +92,10 @@ public class ServerHandler extends SimpleChannelInboundHandler<RpcRequest> {
         // Cglib reflect
         FastClass serviceFastClass = FastClass.create(serviceClass);
         FastMethod serviceFastMethod = serviceFastClass.getMethod(methodName, parameterTypes);
-        return serviceFastMethod.invoke(serviceBean, parameters);
-//        Map<String, ?> map  = CrossServerInitializer.APPLICATIONCONTEXT.getBeansOfType(Class.forName(className));
-//        if(!map.isEmpty())
-//        {
-//            Object beanObj = map.values().iterator().next();
-//            Method method = serviceClass.getMethod(methodName, parameterTypes);
-//            method.setAccessible(true);
-//            return method.invoke(beanObj, parameters);
-//        }
-//        
-//        LOGGER.error("there is no bean corresponding to " + className);
-//        return null;
+        Object result = serviceFastMethod.invoke(serviceBean, parameters);
+        
+        response.setResult(result);
+        response.setReturnType(serviceFastMethod.getReturnType());
     }
 
     @Override

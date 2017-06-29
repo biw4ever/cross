@@ -2,7 +2,7 @@ package com.yjz.cross.codec;
 
 /**
  * RPC Request
- * @author huangyong
+ * @author biw
  */
 public class RpcRequest {
 
