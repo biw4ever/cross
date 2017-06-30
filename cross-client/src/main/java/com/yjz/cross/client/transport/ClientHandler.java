@@ -103,7 +103,7 @@ public class ClientHandler extends SimpleChannelInboundHandler<RpcResponse>
     
     public RPCFuture sendRequest(RpcRequest request)
     {
-        RPCFuture rpcFuture = new RPCFuture(request);
+        RPCFuture rpcFuture = new RPCFuture(request, this.channel.localAddress(), this.channel.remoteAddress());
         pendingRPC.put(request.getRequestId(), rpcFuture);
         channel.writeAndFlush(request);
         

@@ -39,6 +39,8 @@ public class CrossClientInitializer implements ApplicationContextAware
     
     public static Configuration CONFIGURATION;
     
+    public static ApplicationContext APPLICATION_CONTEXT;
+    
     @Value("#{cross['zk.address']}")
     private String zkAddress;
     
@@ -122,6 +124,8 @@ public class CrossClientInitializer implements ApplicationContextAware
     public void setApplicationContext(ApplicationContext applicationContext)
         throws BeansException
     {
+        APPLICATION_CONTEXT = applicationContext;
+        
         Configuration conf = new Configuration();
         conf.addRegistry(zkAddress);
         
