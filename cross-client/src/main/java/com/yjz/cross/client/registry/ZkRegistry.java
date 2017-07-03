@@ -492,11 +492,12 @@ public class ZkRegistry implements Registry
         {
             try
             {
-                String servicePath = CLIENT_ROOT_NODE_PATH + "/" + serviceClassName;
-                Stat state = zk.exists(servicePath, false);
-                if (state != null)
+                String clientAddrPath = CLIENT_ROOT_NODE_PATH + "/" + serviceClassName + "/" + localAddress;
+                Stat state = zk.exists(clientAddrPath, false);
+                if (state == null)
                 {
-                    zk.setData(servicePath, serviceAddress.getBytes(), -1);
+                    zk.create(clientAddrPath, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+                    zk.setData(clientAddrPath, serviceAddress.getBytes(), -1);
                 }
             }
             catch (KeeperException | InterruptedException e)

@@ -17,7 +17,7 @@ public class CommonUtil
     public static String getServiceAddress(SocketAddress socketAddress)
     {
         InetSocketAddress sa = (InetSocketAddress) socketAddress;
-        return sa.getAddress() + ":" + sa.getPort();
+        return sa.getAddress().getHostAddress()+ ":" + sa.getPort();
     }
     
     public static String convertObj2Json(Object obj)
