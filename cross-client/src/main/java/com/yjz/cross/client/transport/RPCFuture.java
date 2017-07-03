@@ -95,6 +95,7 @@ public class RPCFuture implements Future<Object>
         {
             if (this.response != null)
             {
+                insertAccesslog();
                 return this.response.getResult();
             }
             else
@@ -104,6 +105,9 @@ public class RPCFuture implements Future<Object>
         }
         else
         {
+            this.response.setError("Timeout Exception");
+            insertAccesslog();
+            
             throw new RuntimeException(
                 "Timeout exception. Request id: " + this.request.getRequestId() + ". Request class name: "
                     + this.request.getClassName() + ". Request method: " + this.request.getMethodName());
@@ -134,13 +138,14 @@ public class RPCFuture implements Future<Object>
                 + ". Response Time = " + responseTime + "ms");
         }
         
-        insertAccesslog(responseTime);
         sync.release(1);
         invokeCallbacks();
     }
     
-    private void insertAccesslog(long responseTime)
+    private void insertAccesslog()
     {
+        long responseTime = System.currentTimeMillis() - startTime;
+        
         String localAddress = CommonUtil.getServiceAddress(localAddr);
         String remoteAddress = CommonUtil.getServiceAddress(remoteAddr);
         String requestJson = CommonUtil.convertObj2Json(this.request);
